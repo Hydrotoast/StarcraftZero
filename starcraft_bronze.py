@@ -228,6 +228,19 @@ def next_states(state: State, carry: int) -> [(float, int, State)]:
         yield wait_time, new_carry, new_state
 
 
+def print_parents(state: State, parents: {}):
+    """
+    Prints the parents of a state.
+    :param state: Current state of the game
+    :param parents: Parents of the state
+    """
+    print("Parents:")
+    parent = state
+    while parent in parents:
+        time, parent = parents[parent]
+        print("{:.2f}: {}".format(time, parent))
+
+
 def shortest_path_to_goal(start: State):
     """
     Executes dijkstra through the game tree until the goal state is found. The ending time and state are printed at
@@ -236,6 +249,7 @@ def shortest_path_to_goal(start: State):
     """
     # Caches the set of states seen
     cache = set()
+    parents = {}
 
     # Necessary for Dijkstra
     pq = queue.PriorityQueue()
@@ -256,10 +270,12 @@ def shortest_path_to_goal(start: State):
             print("Time to at least 150 Zerglings: {:.2f}".format(time))
             print("Carry: {}".format(carry))
             print("State: {}".format(current_state))
+            print_parents(state, parents)
             break
 
         # Add next game states to frontier
         for wait_time, new_carry, state in next_states(current_state, carry):
+            parents[state] = (time, current_state)
             pq.put((time + wait_time, new_carry, state))
 
 
