@@ -236,6 +236,7 @@ def shortest_path_to_goal(start: State):
     """
     # Caches the set of states seen
     cache = set()
+    parents = {}
 
     # Necessary for Dijkstra
     pq = queue.PriorityQueue()
@@ -256,10 +257,17 @@ def shortest_path_to_goal(start: State):
             print("Time to at least 150 Zerglings: {:.2f}".format(time))
             print("Carry: {}".format(carry))
             print("State: {}".format(current_state))
+
+            print("Parents:")
+            parent = current_state
+            while parent in parents:
+                print(parents[parent])
+                parent = parents[parent]
             break
 
         # Add next game states to frontier
         for wait_time, new_carry, state in next_states(current_state, carry):
+            parents[state] = current_state
             pq.put((time + wait_time, new_carry, state))
 
 
