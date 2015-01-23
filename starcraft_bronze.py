@@ -9,10 +9,6 @@ MAX_OVERLORDS = 25
 MAX_HATCHERIES = 5
 
 
-# Cache of the states
-cache = set()
-
-
 class State:
     def __init__(self):
         # Ordinal states
@@ -238,6 +234,10 @@ def shortest_path_to_goal(start: State):
     the end of the algorithm.
     :param start: Current state of the game
     """
+    # Caches the set of states seen
+    cache = set()
+
+    # Necessary for Dijkstra
     pq = queue.PriorityQueue()
     pq.put((0.0, 0.0, start))
 
