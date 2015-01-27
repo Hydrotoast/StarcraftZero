@@ -234,9 +234,8 @@ def shortest_path_to_goal(start: State):
     while not pq.empty():
         time, current_state = pq.get()
 
-        # Print integer progress
-        if time.is_integer():
-            print("{:.2f}: {}".format(time, current_state))
+        # Print progress
+        print("{:.2f}: {}".format(time, current_state))
 
         # Check endgame
         if current_state.is_end_state:
