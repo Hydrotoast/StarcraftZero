@@ -1,3 +1,4 @@
+import math
 import copy
 import queue
 from itertools import product
@@ -5,13 +6,7 @@ from itertools import product
 
 MAX_DRONES = 50
 MAX_OVERLORDS = 25
-
-# Heuristics
-UNITS_PER_OVERLORD = 4
-#DRONES_PER_HATCHERY = 16
-
-# Cache of the states
-cache = set()
+MAX_HATCHERIES = 5
 
 
 class State:
@@ -53,8 +48,8 @@ class State:
 
     @property
     def max_overlords_producible(self):
-        return min(self.max_units_producible,
-                   min(self.units // UNITS_PER_OVERLORD + 1, MAX_OVERLORDS) - self.overlords)
+        return min(1 if self.max_units_producible == 0 else 0,
+                   MAX_OVERLORDS - self.overlords)
 
     @property
     def max_zerglings_producible(self):
@@ -62,9 +57,8 @@ class State:
 
     @property
     def max_hatcheries_producible(self):
-        return self.max_buildings_producible
-        #return min(self.max_buildings_producible
-        #           self.drones // DRONES_PER_HATCHERY + 1 - self.hatcheries)
+        return min(self.max_buildings_producible,
+                   MAX_HATCHERIES - self.hatcheries)
 
     @property
     def is_end_state(self):
@@ -92,7 +86,7 @@ class State:
             and self.has_spawning_pool == other.has_spawning_pool
 
     def __str__(self):
-        return "State(hatcheries={}, drones={}, zerglings={}, overlords={}, has_spawning_pool={})".format(
+        return "State(hatcheries={}, \tdrones={}, \tzerglings={}, \toverlords={}, \thas_spawning_pool={})".format(
             self.hatcheries, self.drones, self.zerglings, self.overlords, self.has_spawning_pool)
 
 
@@ -106,6 +100,10 @@ class MineralCost:
 
 class HatcheryProduction:
     def __init__(self, drones: int, overlords: int, zerglings: int):
+        assert drones >= 0
+        assert overlords >= 0
+        assert zerglings >= 0
+
         self.drones = drones
         self.overlords = overlords
         self.zerglings = zerglings
@@ -117,13 +115,14 @@ class HatcheryProduction:
         minerals_needed += MineralCost.ZERG * self.zerglings
         return minerals_needed
 
-    @property
-    def time_needed(self):
+    def __len__(self):
         return self.drones + self.overlords + self.zerglings
 
 
 class DroneProduction:
     def __init__(self, hatcheries: int, spawning_pool: bool):
+        assert hatcheries >= 0
+
         self.hatcheries = hatcheries
         self.spawning_pool = spawning_pool
 
@@ -133,9 +132,8 @@ class DroneProduction:
         minerals_needed += MineralCost.SPAWNING_POOL if not state.has_spawning_pool and self.spawning_pool else 0
         return minerals_needed
 
-    @property
-    def time_needed(self):
-        return 0
+    def __len__(self):
+        return self.hatcheries + self.spawning_pool
 
 
 def hatchery_productions(state: State) -> [HatcheryProduction]:
@@ -185,7 +183,7 @@ def productions(drone_prods: [DroneProduction], hatchery_prods: [HatcheryProduct
             yield drone_prod, hatchery_prod
 
 
-def next_state(state: State, hatchery_prod: HatcheryProduction, drone_prod: DroneProduction) -> (int, State):
+def next_state(state: State, hatchery_prod: HatcheryProduction, drone_prod: DroneProduction, carry: int) -> (float, int, State):
     """
     Builds the next state given a current state, a choice of the hatchery production, and a choice of the drone
     production.
@@ -206,21 +204,41 @@ def next_state(state: State, hatchery_prod: HatcheryProduction, drone_prod: Dron
     new_state.drones -= 1 if not state.has_spawning_pool and drone_prod.spawning_pool else 0
     new_state.has_spawning_pool = state.has_spawning_pool or drone_prod.spawning_pool
 
-    wait_time = minerals_needed / state.minerals_per_second + hatchery_prod.time_needed + drone_prod.time_needed
-    return wait_time, new_state
+    true_mineral_needed = minerals_needed - carry
+    wait_time = math.ceil(true_mineral_needed / state.minerals_per_second)
+
+    total_minerals = state.minerals_per_second * wait_time
+
+    wait_time += 1 if len(hatchery_prod) > 0 else 0
+
+    new_carry = total_minerals - true_mineral_needed
+    new_carry += state.minerals_per_second - len(drone_prod) * 8
+
+    return wait_time, new_carry, new_state
 
 
-def next_states(state: State) -> [(int, State)]:
+def next_states(state: State, carry: int) -> [(float, int, State)]:
     """
     Generates the next states of a given state.
     :param state: Current state of the game
     :return: A generator of pairs of waiting times to the next states of a given state
     """
     for drone_prod, hatchery_prod in productions(drone_productions(state), hatchery_productions(state)):
-        wait_time, new_state = next_state(state, hatchery_prod, drone_prod)
-        if new_state not in cache:
-            cache.add(new_state)
-            yield wait_time, new_state
+        wait_time, new_carry, new_state = next_state(state, hatchery_prod, drone_prod, carry)
+        yield wait_time, new_carry, new_state
+
+
+def print_parents(state: State, parents: {}):
+    """
+    Prints the parents of a state.
+    :param state: Current state of the game
+    :param parents: Parents of the state
+    """
+    print("Parents:")
+    parent = state
+    while parent in parents:
+        time, parent = parents[parent]
+        print("{:.2f}: {}".format(time, parent))
 
 
 def shortest_path_to_goal(start: State):
@@ -229,10 +247,20 @@ def shortest_path_to_goal(start: State):
     the end of the algorithm.
     :param start: Current state of the game
     """
+    # Caches the set of states seen
+    cache = set()
+    parents = {}
+
+    # Necessary for Dijkstra
     pq = queue.PriorityQueue()
-    pq.put((0.0, start))
+    pq.put((0.0, 0.0, start))
+
     while not pq.empty():
-        time, current_state = pq.get()
+        time, carry, current_state = pq.get()
+        if current_state in cache:
+            continue
+
+        cache.add(current_state)
 
         # Print progress
         print("{:.2f}: {}".format(time, current_state))
@@ -240,12 +268,15 @@ def shortest_path_to_goal(start: State):
         # Check endgame
         if current_state.is_end_state:
             print("Time to at least 150 Zerglings: {:.2f}".format(time))
+            print("Carry: {}".format(carry))
             print("State: {}".format(current_state))
+            print_parents(state, parents)
             break
 
         # Add next game states to frontier
-        for wait_time, state in next_states(current_state):
-            pq.put((time + wait_time, state))
+        for wait_time, new_carry, state in next_states(current_state, carry):
+            parents[state] = (time, current_state)
+            pq.put((time + wait_time, new_carry, state))
 
 
 def main():
